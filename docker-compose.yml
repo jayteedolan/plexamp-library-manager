@@ -12,8 +12,10 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     env_file: .env
     ports:
-      # Only reachable from the Pi itself; Tailscale Serve publishes it to your devices over HTTPS.
-      - "127.0.0.1:8080:8080"
+      # Defaults to the Pi only; Tailscale Serve then publishes it over HTTPS (see SETUP.md).
+      # For LAN testing before Tailscale is set up, set APP_BIND=0.0.0.0 in .env instead --
+      # that exposes the login page to your whole network, so switch it back afterwards.
+      - "${APP_BIND:-127.0.0.1}:8080:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway" # reach the native Plex server
     volumes:
@@ -23,6 +25,7 @@ services:
       - ./data:/data
 
   # Only needed if slskd is not already installed on the Pi:  docker compose --profile slskd up -d
+  # Config (Soulseek login, shares, downloads dir, API key) lives in ./slskd/slskd.yml -- see SETUP.md.
   slskd:
     image: slskd/slskd:latest
     container_name: slskd
@@ -30,15 +33,16 @@ services:
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
-      - SLSKD_REMOTE_CONFIGURATION=true
-      - SLSKD_DOWNLOADS_DIR=${STAGING_ROOT:-/mnt/usb/.lm/staging}
-      - SLSKD_INCOMPLETE_DIR=${STAGING_ROOT:-/mnt/usb/.lm/staging}/.incomplete
-      - SLSKD_SHARED_DIR=${LIBRARY_ROOT:-/mnt/usb/Music}
-      - SLSKD_SLSK_USERNAME=${SOULSEEK_USERNAME:-}
-      - SLSKD_SLSK_PASSWORD=${SOULSEEK_PASSWORD:-}
+      - SLSKD_REMOTE_CONFIGURATION=false
     ports:
       - "127.0.0.1:5030:5030" # slskd web UI (use via Tailscale or an SSH tunnel)
       - "50300:50300"         # Soulseek peer port; forward this on your router for better connectivity
     volumes:
-      - ./slskd:/app
+      - ./slskd/slskd.yml:/app/slskd.yml
+      - slskd_data:/app
+      # Same top-level mount as the app service below, so slskd.yml's absolute directories/shares
+      # paths (under this drive) resolve identically in both containers.
       - ${USB_ROOT:-/mnt/usb}:${USB_ROOT:-/mnt/usb}
+
+volumes:
+  slskd_data:

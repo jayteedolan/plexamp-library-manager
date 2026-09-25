@@ -85,3 +85,15 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* iOS Safari zooms the page on focus when an input's font-size is under 16px, regardless of the
+   viewport meta tag. Force 16px on mobile widths only, so desktop keeps its denser text-sm inputs.
+   !important is deliberate here: it only needs to beat Tailwind's own text-size utility classes,
+   and text-size is the one thing this rule should always win on. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

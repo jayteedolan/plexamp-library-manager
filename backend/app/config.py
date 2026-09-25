@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     trash_retention_days: int = 30
     session_days: int = 30
     cookie_secure: bool = True
+    # Off by default: a login page and single admin account. Some self-hosters run this behind
+    # their own access control (e.g. Tailscale-only, already trusted) and don't want a second
+    # login layer. Setting this false removes both -- every route in the app becomes reachable to
+    # anything that can reach the container, so only do this on a network you already trust.
+    auth_enabled: bool = True
     disk_warning_percent: int = 90
     static_dir: Path | None = None
     poll_interval_seconds: float = 2.0

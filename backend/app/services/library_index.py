@@ -48,6 +48,29 @@ def find_existing_folder(base: Path, name: str) -> str | None:
     return None
 
 
+def _count_audio(folder: Path) -> int:
+    count = 0
+    for _dp, _dn, files in os.walk(folder):
+        count += sum(1 for f in files if fs.entry_kind(f, False) == "audio")
+    return count
+
+
+def _live_track_count(artist: str | None, album: str | None) -> int | None:
+    """Audio files currently on disk in the matching artist/album folder, or None if it's gone."""
+    library_root = fs.roots()["library"]
+    artist_dir = find_existing_folder(library_root, artist) if artist else None
+    if artist and artist_dir is None:
+        return None
+    base = library_root / artist_dir if artist_dir else library_root
+    album_dir = find_existing_folder(base, album) if album else None
+    if album and album_dir is None:
+        return None
+    try:
+        return _count_audio(base / album_dir) if album_dir else _count_audio(base)
+    except OSError:
+        return None
+
+
 @dataclass
 class LibraryIndex:
     albums: dict[tuple[str, str], int] = field(default_factory=dict)  # (artist, album) -> track count
@@ -63,7 +86,14 @@ class LibraryIndex:
         self.albums_by_title.setdefault(b, []).append(a)
 
     def match(self, remote_folder: str, audio_count: int) -> str | None:
-        """Return 'full', 'partial' or None for a remote folder path like 'Music\\Artist\\Album (2001)'."""
+        """Return 'full', 'partial' or None for a remote folder path like 'Music\\Artist\\Album (2001)'.
+
+        The cached index (from Plex, or the filesystem) only reflects what it saw at the last scan
+        or rebuild -- it doesn't know about files deleted since through the explorer, since that
+        doesn't trigger a Plex scan. So once a name match is found, this checks the *current* library
+        folder before answering: an emptied-out or removed album folder is never reported as in the
+        library, however stale the cached count says otherwise.
+        """
         from app.services.tags import parse_folder_name
 
         parts = [p for p in remote_folder.replace("\\", "/").split("/") if p]
@@ -82,9 +112,12 @@ class LibraryIndex:
             candidates.append((parts[-2], album or folder))
         for cand_artist, cand_album in candidates:
             key = (normalize(cand_artist), normalize(cand_album))
-            if key in self.albums:
-                have = self.albums[key]
-                return "partial" if have and audio_count and have < audio_count else "full"
+            if key not in self.albums:
+                continue
+            have = _live_track_count(cand_artist, cand_album)
+            if not have:  # folder doesn't currently exist, or is empty -- not really "in library"
+                continue
+            return "partial" if audio_count and have < audio_count else "full"
         return None
 
 
@@ -108,10 +141,9 @@ def build_from_filesystem(library_root: Path) -> LibraryIndex:
                     for album in albums:
                         if not album.is_dir() or fs.is_hidden(album.name):
                             continue
-                        count = 0
-                        for _dp, _dn, files in os.walk(album.path):
-                            count += sum(1 for f in files if fs.entry_kind(f, False) == "audio")
-                        idx.add(artist.name, album.name, count)
+                        count = _count_audio(Path(album.path))
+                        if count:  # an emptied-out album folder isn't a known album any more
+                            idx.add(artist.name, album.name, count)
             except OSError:
                 continue
     return idx

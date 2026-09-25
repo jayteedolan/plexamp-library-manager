@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, LogOut, XCircle } from "lucide-react";
+import { CheckCircle2, LogOut, ShieldOff, XCircle } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { Button, Card, Field, PageHeader, Spinner, inputClass } from "../components/ui";
 import { api } from "../lib/api";
-import type { PlexSection, SettingsView } from "../lib/types";
+import type { AuthStatus, PlexSection, SettingsView } from "../lib/types";
 import { toast } from "../store/toasts";
 
 interface TestResult {
@@ -200,9 +200,25 @@ export function SettingsPage() {
 
 function AccountSection() {
   const qc = useQueryClient();
+  // Shares the cache with App.tsx's own auth check, so this is a free read in practice.
+  const auth = useQuery({ queryKey: ["auth"], queryFn: () => api.get<AuthStatus>("/api/auth/status") });
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
+
+  if (auth.data && !auth.data.auth_enabled) {
+    return (
+      <Section title="Account">
+        <div className="flex items-start gap-2 text-sm text-muted">
+          <ShieldOff className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Login is turned off for this instance (<code>AUTH_ENABLED=false</code>), so there's no account to manage here. Anything
+            that can reach this server can use it without signing in.
+          </span>
+        </div>
+      </Section>
+    );
+  }
 
   const change = async (e: FormEvent) => {
     e.preventDefault();

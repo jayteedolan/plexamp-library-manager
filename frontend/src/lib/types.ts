@@ -191,6 +191,13 @@ export interface PlexStatus {
   last_scan_path: string | null;
 }
 
+export interface AuthStatus {
+  setup_required: boolean;
+  authenticated: boolean;
+  username: string | null;
+  auth_enabled: boolean;
+}
+
 export interface SettingsView {
   slskd_url: string;
   slskd_api_key_set: boolean;

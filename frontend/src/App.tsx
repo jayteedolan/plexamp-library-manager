@@ -7,6 +7,7 @@ import { Toaster } from "./components/Toaster";
 import { Spinner } from "./components/ui";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { useServerEvents } from "./lib/events";
+import type { AuthStatus } from "./lib/types";
 import { Dashboard } from "./pages/Dashboard";
 import { Downloads } from "./pages/Downloads";
 import { FileDownload } from "./pages/FileDownload";
@@ -16,12 +17,6 @@ import { SearchPage } from "./pages/Search";
 import { SettingsPage } from "./pages/Settings";
 import { TrashPage } from "./pages/Trash";
 import { DialogHost } from "./store/dialogs";
-
-interface AuthStatus {
-  setup_required: boolean;
-  authenticated: boolean;
-  username: string | null;
-}
 
 export function App() {
   const qc = useQueryClient();

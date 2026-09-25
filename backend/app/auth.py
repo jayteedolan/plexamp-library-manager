@@ -38,6 +38,11 @@ def admin_exists(db: Session) -> bool:
     return db.query(User.id).first() is not None
 
 
+# Stands in for the real user when auth_enabled=false. Never added to a session, so it's never
+# persisted; it exists only so routes that take a `User` don't need a second code path.
+ANONYMOUS_USER = User(id=0, username="local", password_hash="", created_at=utcnow())
+
+
 def validate_new_credentials(username: str, password: str) -> None:
     if not username.strip() or len(username) > 64:
         raise HTTPException(400, "Username is required (max 64 characters).")
@@ -74,6 +79,8 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Dependency for every protected route. Also enforces the CSRF header on mutating requests."""
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get(CSRF_HEADER) != "lm":
         raise HTTPException(403, "Missing CSRF header.")
+    if not get_settings().auth_enabled:
+        return ANONYMOUS_USER
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(401, "Not logged in.")

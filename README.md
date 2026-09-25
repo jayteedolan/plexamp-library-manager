@@ -33,7 +33,7 @@ Phone / laptop ──Tailscale HTTPS──▶ Library Manager (Docker, :8080 on 
 - All writes stop if the USB drive isn't mounted (`MOUNT_MARKER`), so nothing ever fills the SD card by accident.
 - Deleting and replacing always goes through the Trash, and moves, renames and deletes have a 10-second **Undo**.
 - Folders that slskd is still writing to are locked against explorer operations.
-- There is a single admin account: the password is hashed with Argon2id, the session cookie is HttpOnly and SameSite=Strict, logins are rate-limited, and changes require a CSRF header. The app is exposed only through Tailscale.
+- There is a single admin account: the password is hashed with Argon2id, the session cookie is HttpOnly and SameSite=Strict, logins are rate-limited, and changes require a CSRF header. The app is exposed only through Tailscale. The login page is optional (`AUTH_ENABLED=false`) for instances that already sit behind their own trusted access control.
 
 ## Development
 

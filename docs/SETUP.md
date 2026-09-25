@@ -134,6 +134,9 @@ cd plexamp-library-manager
 cp .env.example .env
 nano .env                           # PUID, PGID, paths, SLSKD_*, PLEX_*
 mkdir -p data
+# Docker would otherwise create this bind-mount target as root on first run, and the
+# container (running as PUID:PGID) can't write its database into a root-owned folder.
+sudo chown "$(grep ^PUID= .env | cut -d= -f2)":"$(grep ^PGID= .env | cut -d= -f2)" data
 docker compose up -d                # pulls the prebuilt arm64 image
 # (or build on the Pi instead: docker compose up -d --build)
 docker compose logs -f app
@@ -180,6 +183,16 @@ Forgot the password?
 ```bash
 docker compose exec app python -m app.cli reset-password
 ```
+
+### Running without a login page
+
+If this instance already sits behind access control you trust -- Tailscale-only (the setup above),
+or your own reverse proxy with its own auth -- you can turn off Library Manager's login page too, so
+there's no second account to manage. Set `AUTH_ENABLED=false` in `.env` and `docker compose up -d
+app`. There's no setup wizard in this mode; the dashboard opens directly. **Anything that can reach
+the container can then use the app without signing in**, so only do this once you're sure nothing
+untrusted can reach port 8080 -- don't combine it with `APP_BIND=0.0.0.0` (LAN testing, above) or a
+router port-forward.
 
 ## Updating and backups
 

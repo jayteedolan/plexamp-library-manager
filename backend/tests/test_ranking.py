@@ -47,7 +47,16 @@ def test_mixed_folder_and_locked():
     assert by_dir["e"]["locked"] is True
 
 
-def test_in_library_hint():
+def _make_album(roots, artist: str, album: str, track_count: int) -> None:
+    d = roots["library"] / artist / album
+    d.mkdir(parents=True)
+    for i in range(track_count):
+        (d / f"{i}.flac").touch()
+
+
+def test_in_library_hint(roots):
+    _make_album(roots, "The Beatles", "Abbey Road", 17)
+    _make_album(roots, "Radiohead", "OK Computer", 5)
     idx = library_index.LibraryIndex()
     idx.add("The Beatles", "Abbey Road", 17)
     idx.add("Radiohead", "OK Computer", 5)
@@ -57,6 +66,30 @@ def test_in_library_hint():
     assert idx.match("Radiohead\\Kid A", 10) is None
     groups = ranking.build_groups([resp("u", [f("Radiohead\\OK Computer\\01.flac")])], idx)
     assert groups[0]["in_library"] == "full"
+
+
+def test_in_library_hint_ignores_stale_cache_for_emptied_folder(roots):
+    # The album folder still exists but every track was deleted (e.g. via the explorer, which
+    # doesn't trigger a Plex rescan) -- the cached count says 1, but the real folder is empty.
+    (roots["library"] / "Brakence" / "Ready Or Not").mkdir(parents=True)
+    idx = library_index.LibraryIndex()
+    idx.add("Brakence", "Ready Or Not", 1)
+    assert idx.match("Music\\Brakence - Ready Or Not", 1) is None
+
+
+def test_in_library_hint_ignores_stale_cache_for_removed_folder(roots):
+    # The whole album folder is gone, but the cached index (built before the delete) still knows it.
+    idx = library_index.LibraryIndex()
+    idx.add("Brakence", "Gone Album", 1)
+    assert idx.match("Music\\Brakence - Gone Album", 1) is None
+
+
+def test_build_from_filesystem_skips_empty_albums(roots):
+    _make_album(roots, "Real Artist", "Real Album", 3)
+    (roots["library"] / "Empty Artist" / "Empty Album").mkdir(parents=True)
+    idx = library_index.build_from_filesystem(roots["library"])
+    assert idx.match("x\\Real Artist - Real Album", 3) == "full"
+    assert idx.match("x\\Empty Artist - Empty Album", 1) is None
 
 
 def test_normalize():

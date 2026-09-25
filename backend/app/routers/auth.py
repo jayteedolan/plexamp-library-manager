@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import auth
+from app.config import get_settings
 from app.db import get_db
 from app.models import AuthSession, User
 
@@ -26,17 +27,22 @@ def require_csrf(request: Request) -> None:
 
 @router.get("/status")
 def status(request: Request, db: Session = Depends(get_db)):
+    auth_enabled = get_settings().auth_enabled
+    if not auth_enabled:
+        return {"setup_required": False, "authenticated": True, "username": None, "auth_enabled": False}
     if not auth.admin_exists(db):
-        return {"setup_required": True, "authenticated": False, "username": None}
+        return {"setup_required": True, "authenticated": False, "username": None, "auth_enabled": True}
     try:
         user = auth.current_user(request, db)
     except HTTPException:
-        return {"setup_required": False, "authenticated": False, "username": None}
-    return {"setup_required": False, "authenticated": True, "username": user.username}
+        return {"setup_required": False, "authenticated": False, "username": None, "auth_enabled": True}
+    return {"setup_required": False, "authenticated": True, "username": user.username, "auth_enabled": True}
 
 
 @router.post("/setup", dependencies=[Depends(require_csrf)])
 def setup(body: Credentials, response: Response, db: Session = Depends(get_db)):
+    if not get_settings().auth_enabled:
+        raise HTTPException(400, "Login is disabled for this instance (AUTH_ENABLED=false).")
     if auth.admin_exists(db):
         raise HTTPException(409, "The admin account already exists.")
     auth.validate_new_credentials(body.username, body.password)
@@ -49,6 +55,8 @@ def setup(body: Credentials, response: Response, db: Session = Depends(get_db)):
 
 @router.post("/login", dependencies=[Depends(require_csrf)])
 def login(body: Credentials, request: Request, response: Response, db: Session = Depends(get_db)):
+    if not get_settings().auth_enabled:
+        raise HTTPException(400, "Login is disabled for this instance (AUTH_ENABLED=false).")
     key = request.client.host if request.client else "unknown"
     auth.limiter.check(key)
     user = db.query(User).filter(User.username == body.username.strip()).first()
@@ -70,6 +78,8 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db),
 @router.post("/password")
 def change_password(body: PasswordChange, db: Session = Depends(get_db),
                     user: User = Depends(auth.current_user)):
+    if not get_settings().auth_enabled:
+        raise HTTPException(400, "Login is disabled for this instance -- there is no password to change.")
     if not auth.verify_password(user.password_hash, body.current_password):
         raise HTTPException(400, "Current password is incorrect.")
     auth.validate_new_credentials(user.username, body.new_password)

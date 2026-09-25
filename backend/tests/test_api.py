@@ -23,6 +23,23 @@ def test_setup_login_and_csrf(client):
     assert client.get("/api/files").status_code == 401
 
 
+def test_auth_can_be_disabled(client, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    get_settings.cache_clear()
+    status = client.get("/api/auth/status").json()
+    assert status == {"setup_required": False, "authenticated": True, "username": None, "auth_enabled": False}
+    # No login ever happened, yet a protected route works straight away.
+    assert client.get("/api/files").status_code == 200
+    # The account/login endpoints refuse to do anything while auth is off.
+    creds = {"username": "x", "password": "correct horse battery"}
+    assert client.post("/api/auth/setup", json=creds).status_code == 400
+    assert client.post("/api/auth/login", json=creds).status_code == 400
+    pw_change = {"current_password": "a", "new_password": "b" * 12}
+    assert client.post("/api/auth/password", json=pw_change).status_code == 400
+
+
 def test_login_rate_limit(client):
     from app import auth
 

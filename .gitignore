@@ -1,4 +1,5 @@
 __pycache__/
+*.egg-info/
 *.pyc
 .venv/
 .pytest_cache/
@@ -9,7 +10,6 @@ backend/static/
 .env
 data/
 *.db
-data/
 slskd/
 e2e/shots/
 *.tsbuildinfo
