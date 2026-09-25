@@ -1,0 +1,44 @@
+# Plex Library Manager on a Raspberry Pi. Plex itself stays installed natively.
+# See docs/SETUP.md before the first `docker compose up -d`.
+services:
+  app:
+    image: ghcr.io/jayteedolan/plexamp-library-manager:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: library-manager
+    restart: unless-stopped
+    # Run as the owner of the music folder so new files belong to you (and Plex's group can read them).
+    user: "${PUID:-1000}:${PGID:-1000}"
+    env_file: .env
+    ports:
+      # Only reachable from the Pi itself; Tailscale Serve publishes it to your devices over HTTPS.
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # reach the native Plex server
+    volumes:
+      # Mount the whole USB drive at the same path as on the host, so library/staging/trash share
+      # one filesystem (instant moves) and Plex sees the same paths for targeted scans.
+      - ${USB_ROOT:-/mnt/usb}:${USB_ROOT:-/mnt/usb}
+      - ./data:/data
+
+  # Only needed if slskd is not already installed on the Pi:  docker compose --profile slskd up -d
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    profiles: ["slskd"]
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      - SLSKD_REMOTE_CONFIGURATION=true
+      - SLSKD_DOWNLOADS_DIR=${STAGING_ROOT:-/mnt/usb/.lm/staging}
+      - SLSKD_INCOMPLETE_DIR=${STAGING_ROOT:-/mnt/usb/.lm/staging}/.incomplete
+      - SLSKD_SHARED_DIR=${LIBRARY_ROOT:-/mnt/usb/Music}
+      - SLSKD_SLSK_USERNAME=${SOULSEEK_USERNAME:-}
+      - SLSKD_SLSK_PASSWORD=${SOULSEEK_PASSWORD:-}
+    ports:
+      - "127.0.0.1:5030:5030" # slskd web UI (use via Tailscale or an SSH tunnel)
+      - "50300:50300"         # Soulseek peer port; forward this on your router for better connectivity
+    volumes:
+      - ./slskd:/app
+      - ${USB_ROOT:-/mnt/usb}:${USB_ROOT:-/mnt/usb}

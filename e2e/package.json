@@ -1,0 +1,7 @@
+{
+  "name": "library-manager-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": { "smoke": "node smoke.mjs" },
+  "devDependencies": { "playwright": "^1.55.0" }
+}

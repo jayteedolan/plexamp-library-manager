@@ -9,3 +9,6 @@ backend/static/
 .env
 data/
 *.db
+data/
+slskd/
+e2e/shots/
