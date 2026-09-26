@@ -25,6 +25,8 @@ _SHORT_RE = re.compile(r"(?:https?://)?spotify\.link/[A-Za-z0-9]+")
 # common cooldown after a 429.
 _limiter = AsyncRateLimiter(min_interval=0.1, max_concurrency=2)
 _token: dict = {"key": None, "value": None, "expires": 0.0}
+RELEASES_PAGE_SIZE = 10
+MAX_RELEASES = 200
 
 
 class SpotifyError(Exception):
@@ -129,6 +131,15 @@ def group_releases(items: list[dict]) -> dict:
     return {"albums": groups["album"], "singles": groups["single"], "compilations": groups["compilation"]}
 
 
+def _error_message(r: httpx.Response) -> str:
+    try:
+        err = r.json().get("error")
+        msg = err.get("message") if isinstance(err, dict) else err
+    except (ValueError, AttributeError):
+        msg = None
+    return msg or f"error {r.status_code}"
+
+
 # -------------------------------------------------------------------------------------------- client
 
 class SpotifyClient:
@@ -175,8 +186,10 @@ class SpotifyClient:
                                            headers={"Authorization": f"Bearer {token}"})
             if r.status_code == 401 and attempt == 0:
                 continue  # token expired or revoked early: refresh once
-            if r.status_code in (400, 404):
+            if r.status_code == 404:
                 raise SpotifyError("Spotify couldn't find that item.")
+            if r.status_code == 400:
+                raise SpotifyError(f"Spotify rejected the request: {_error_message(r)}")
             if r.status_code >= 400:
                 raise SpotifyError(f"Spotify error {r.status_code}.")
             return r.json()
@@ -212,12 +225,14 @@ class SpotifyClient:
         return artist_summary(await self._get(f"/artists/{artist_id}"))
 
     async def artist_releases(self, artist_id: str) -> dict:
-        # Follow `next` links rather than assuming a page size; Spotify has changed limits before.
+        # Spotify caps this endpoint at 10 per page (a larger limit is a 400 "Invalid limit"), so
+        # follow `next` links. Capped at 200 releases (20 requests) for very prolific artists.
         page = await self._get(f"/artists/{artist_id}/albums",
-                               {"include_groups": "album,single,compilation", "market": self.market, "limit": 50})
+                               {"include_groups": "album,single,compilation", "market": self.market,
+                                "limit": RELEASES_PAGE_SIZE})
         items = list(page.get("items") or [])
         nxt = page.get("next")
-        while nxt and len(items) < 500:
+        while nxt and len(items) < MAX_RELEASES:
             page = await self._get(nxt)
             items.extend(page.get("items") or [])
             nxt = page.get("next")

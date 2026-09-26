@@ -237,3 +237,34 @@ def test_suggest_destination_prefers_tags_over_hint(roots):
     f = make_flac(roots["staging"] / "y" / "1.flac", artist="Tagged Artist", album="Tagged Album")
     s = suggest_destination([f], "x\\y", hint={"artist": "Hint", "album": "Hint Album"})
     assert s["source"] == "tags" and s["path"] == "library/Tagged Artist/Tagged Album"
+
+
+@respx.mock
+async def test_artist_releases_respects_spotify_page_limit():
+    """Spotify returns 400 "Invalid limit" above 10 per page for artist albums; page through instead."""
+    token_route()
+
+    def artist_albums(request):
+        limit = int(request.url.params.get("limit", 20))
+        if limit > 10:
+            return httpx.Response(400, json={"error": {"status": 400, "message": "Invalid limit"}})
+        offset = int(request.url.params.get("offset", 0))
+        items = [album_json(f"Album {i}", group="album", album_id=f"a{i:02d}", date=f"20{i:02d}-01-01")
+                 for i in range(offset, min(offset + limit, 13))]
+        nxt = f"{API}/artists/{ARTIST_ID}/albums?offset={offset + limit}&limit={limit}" if offset + limit < 13 else None
+        return httpx.Response(200, json={"items": items, "next": nxt})
+
+    route = respx.get(f"{API}/artists/{ARTIST_ID}/albums").mock(side_effect=artist_albums)
+    async with spotify.SpotifyClient("cid", "secret", api_url=API, accounts_url=ACCOUNTS) as c:
+        releases = await c.artist_releases(ARTIST_ID)
+    assert len(releases["albums"]) == 13 and route.call_count == 2
+
+
+@respx.mock
+async def test_bad_request_shows_spotifys_message():
+    token_route()
+    respx.get(f"{API}/artists/{ARTIST_ID}").mock(
+        return_value=httpx.Response(400, json={"error": {"status": 400, "message": "Invalid limit"}}))
+    async with spotify.SpotifyClient("cid", "secret", api_url=API, accounts_url=ACCOUNTS) as c:
+        with pytest.raises(spotify.SpotifyError, match="Invalid limit"):
+            await c.artist(ARTIST_ID)
