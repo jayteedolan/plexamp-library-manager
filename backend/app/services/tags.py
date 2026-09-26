@@ -86,10 +86,12 @@ def parse_folder_name(folder: str) -> tuple[str | None, str | None]:
     return None, _YEAR_PREFIX.sub("", name).strip() or None
 
 
-def suggest_destination(files: list[Path], remote_folder: str, library_index=None) -> dict:
+def suggest_destination(files: list[Path], remote_folder: str, library_index=None,
+                        hint: dict | None = None) -> dict:
     """Suggest `library/<Artist>/<Album>` for a set of downloaded files.
 
-    Uses the most common album-artist/artist and album tags; falls back to the remote folder name.
+    Uses the most common album-artist/artist and album tags. Missing values come from `hint` (the
+    Spotify artist/album a download was started from), then from the remote folder name.
     Reuses an existing artist/album folder whose name matches ignoring case and punctuation.
     """
     artists: Counter[str] = Counter()
@@ -110,6 +112,10 @@ def suggest_destination(files: list[Path], remote_folder: str, library_index=Non
     artist = artists.most_common(1)[0][0] if artists else None
     album = albums.most_common(1)[0][0] if albums else None
     parts = [p for p in remote_folder.replace("\\", "/").split("/") if p]
+    if (not artist or not album) and hint and (hint.get("artist") or hint.get("album")):
+        source = "catalog"
+        artist = artist or hint.get("artist")
+        album = album or hint.get("album")
     if not artist or not album:
         source = "folder"
         f_artist, f_album = parse_folder_name(parts[-1] if parts else "")

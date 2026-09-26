@@ -153,7 +153,7 @@ export interface Suggestion {
   album: string | null;
   path: string;
   exists: boolean;
-  source: "tags" | "folder";
+  source: "tags" | "catalog" | "folder";
   confident: boolean;
 }
 
@@ -206,4 +206,64 @@ export interface SettingsView {
   plex_section_id: string;
   plex_library_path: string;
   trash_retention_days: number;
+  spotify_client_id: string;
+  spotify_client_secret_set: boolean;
+  spotify_market: string;
+}
+
+export type LibraryHint = "full" | "partial" | null;
+
+export interface CatalogAlbum {
+  id: string;
+  name: string;
+  artists: string[];
+  artist: string;
+  type: "album" | "single" | "compilation" | string;
+  release_date: string | null;
+  year: string | null;
+  total_tracks: number;
+  image: string | null;
+  url: string | null;
+  in_library: LibraryHint;
+}
+
+export interface CatalogTrack {
+  id: string;
+  name: string;
+  artists: string[];
+  artist: string;
+  track_number: number | null;
+  disc_number: number;
+  duration_ms: number | null;
+  explicit: boolean;
+  album?: CatalogAlbum;
+}
+
+export interface CatalogAlbumDetail extends CatalogAlbum {
+  label: string | null;
+  tracks: CatalogTrack[];
+}
+
+export interface CatalogArtist {
+  id: string;
+  name: string;
+  image: string | null;
+  genres: string[];
+  url: string | null;
+}
+
+export interface CatalogArtistDetail extends CatalogArtist {
+  releases: { albums: CatalogAlbum[]; singles: CatalogAlbum[]; compilations: CatalogAlbum[] };
+}
+
+export interface CatalogSearchResults {
+  albums: CatalogAlbum[];
+  artists: CatalogArtist[];
+  tracks: CatalogTrack[];
+}
+
+export interface CatalogStatus {
+  configured: boolean;
+  ok: boolean;
+  message: string;
 }

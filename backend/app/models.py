@@ -78,3 +78,25 @@ class DownloadFile(Base):
     filed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     job: Mapped[DownloadJob] = relationship(back_populates="files")
+
+
+class CacheEntry(Base):
+    """Cached third-party API responses (JSON), so revisiting a page costs no outbound requests."""
+
+    __tablename__ = "api_cache"
+    key: Mapped[str] = mapped_column(String(512), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DownloadJobHint(Base):
+    """Catalog (Spotify) artist/album a download was started from, used when suggesting where to file it.
+
+    A separate table rather than new columns on download_jobs, so create_all can add it to existing
+    databases without a migration.
+    """
+
+    __tablename__ = "download_job_hints"
+    job_id: Mapped[int] = mapped_column(ForeignKey("download_jobs.id", ondelete="CASCADE"), primary_key=True)
+    artist: Mapped[str | None] = mapped_column(Text, nullable=True)
+    album: Mapped[str | None] = mapped_column(Text, nullable=True)

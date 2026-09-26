@@ -1,7 +1,12 @@
 from app.providers.base import SearchProvider
 from app.services import library_index, ranking
 from app.services import settings as settings_service
+from app.services.ratelimit import AsyncRateLimiter
 from app.services.slskd import SlskdClient, SlskdError
+
+# Soulseek drops the connection when searches are fired in bursts, and "Find on Soulseek" makes quick
+# repeat searches easy, so search starts are serialized and spaced out.
+search_limiter = AsyncRateLimiter(min_interval=3.0, max_concurrency=1)
 
 
 def client_for(db, timeout: float = 15.0) -> SlskdClient:
@@ -26,7 +31,7 @@ class SoulseekProvider(SearchProvider):
         return {"ok": True, "message": "Connected to Soulseek."}
 
     async def start_search(self, query: str) -> str:
-        async with client_for(self.db) as c:
+        async with search_limiter, client_for(self.db) as c:
             return await c.start_search(query)
 
     async def search_results(self, search_id: str) -> dict:
