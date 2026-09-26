@@ -194,6 +194,24 @@ the container can then use the app without signing in**, so only do this once yo
 untrusted can reach port 8080 -- don't combine it with `APP_BIND=0.0.0.0` (LAN testing, above) or a
 router port-forward.
 
+### Spotify browsing (optional)
+
+The Search page has a **Spotify** tab for browsing Spotify's catalog: search for artists, albums and songs,
+open an artist to see their albums, singles and compilations, or paste a Spotify link. **Find on Soulseek**
+then searches Soulseek for that release and marks which result folders contain its tracks. Only Spotify's
+metadata is used; nothing is downloaded from Spotify.
+
+It needs your own free Spotify developer app, so requests use your own quota:
+
+1. Sign in at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and choose **Create app**.
+2. Give it any name and description. For **Redirect URI** enter `http://127.0.0.1` (it isn't used), and tick **Web API**.
+3. Open the app's **Settings** and copy the **Client ID** and **Client Secret**.
+4. In Library Manager's **Settings → Spotify**, paste both, set your two-letter market (e.g. `US`), press
+   **Test connection**, then **Save settings**.
+
+Spotify responses are cached (albums and artists for a week, searches for an hour), and requests are paced.
+If Spotify ever asks the app to slow down, the page says how long to wait instead of retrying on its own.
+
 ## Updating and backups
 
 ```bash

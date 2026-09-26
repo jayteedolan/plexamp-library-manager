@@ -111,14 +111,20 @@ class LibraryIndex:
         if len(parts) >= 2:
             candidates.append((parts[-2], album or folder))
         for cand_artist, cand_album in candidates:
-            key = (normalize(cand_artist), normalize(cand_album))
-            if key not in self.albums:
-                continue
-            have = _live_track_count(cand_artist, cand_album)
-            if not have:  # folder doesn't currently exist, or is empty -- not really "in library"
-                continue
-            return "partial" if audio_count and have < audio_count else "full"
+            result = self.match_release(cand_artist, cand_album, audio_count)
+            if result:
+                return result
         return None
+
+    def match_release(self, artist: str | None, album: str | None, track_count: int) -> str | None:
+        """'full', 'partial' or None for a known artist/album name pair (e.g. from Spotify)."""
+        key = (normalize(artist), normalize(album))
+        if not key[1] or key not in self.albums:
+            return None
+        have = _live_track_count(artist, album)
+        if not have:  # folder doesn't currently exist, or is empty -- not really "in library"
+            return None
+        return "partial" if track_count and have < track_count else "full"
 
 
 _index = LibraryIndex()

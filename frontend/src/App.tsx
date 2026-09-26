@@ -8,6 +8,9 @@ import { Spinner } from "./components/ui";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { useServerEvents } from "./lib/events";
 import type { AuthStatus } from "./lib/types";
+import { CatalogAlbum } from "./pages/CatalogAlbum";
+import { CatalogArtist } from "./pages/CatalogArtist";
+import { CatalogTrack } from "./pages/CatalogTrack";
 import { Dashboard } from "./pages/Dashboard";
 import { Downloads } from "./pages/Downloads";
 import { FileDownload } from "./pages/FileDownload";
@@ -64,6 +67,9 @@ export function App() {
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="search" element={<SearchPage />} />
+          <Route path="search/spotify/album/:id" element={<CatalogAlbum />} />
+          <Route path="search/spotify/artist/:id" element={<CatalogArtist />} />
+          <Route path="search/spotify/track/:id" element={<CatalogTrack />} />
           <Route path="downloads" element={<Downloads />} />
           <Route path="downloads/:id/file" element={<FileDownload />} />
           <Route path="library" element={<Library />} />

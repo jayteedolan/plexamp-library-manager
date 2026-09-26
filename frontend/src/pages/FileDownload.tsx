@@ -98,8 +98,9 @@ export function FileDownload() {
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-lg font-semibold">File “{job.data!.title}”</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-            <Badge tone={s.source === "tags" ? "ok" : "warn"}>
-              <Tags className="size-3" /> {s.source === "tags" ? "Suggested from tags" : "Guessed from folder name"}
+            <Badge tone={s.source === "folder" ? "warn" : "ok"}>
+              <Tags className="size-3" />{" "}
+              {s.source === "tags" ? "Suggested from tags" : s.source === "catalog" ? "Suggested from Spotify" : "Guessed from folder name"}
             </Badge>
             <span>
               {s.artist ?? "Unknown artist"} — {s.album ?? "Unknown album"}

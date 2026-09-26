@@ -43,15 +43,19 @@ export function SettingsPage() {
     plex_section_id: "",
     plex_library_path: "",
     trash_retention_days: 30,
+    spotify_client_id: "",
+    spotify_client_secret: "",
+    spotify_market: "US",
   });
   const [slskdTest, setSlskdTest] = useState<TestResult | null>(null);
   const [plexTest, setPlexTest] = useState<TestResult | null>(null);
+  const [spotifyTest, setSpotifyTest] = useState<TestResult | null>(null);
   const [sections, setSections] = useState<PlexSection[]>([]);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
 
   useEffect(() => {
-    if (q.data) setForm((f) => ({ ...f, ...q.data, slskd_api_key: "", plex_token: "" }));
+    if (q.data) setForm((f) => ({ ...f, ...q.data, slskd_api_key: "", plex_token: "", spotify_client_secret: "" }));
   }, [q.data]);
 
   const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -63,6 +67,22 @@ export function SettingsPage() {
       setSlskdTest(await api.post<TestResult>("/api/settings/test-slskd", { url: form.slskd_url, api_key: form.slskd_api_key || null }));
     } catch (e) {
       setSlskdTest({ ok: false, message: (e as Error).message });
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const testSpotify = async () => {
+    setTesting("spotify");
+    try {
+      setSpotifyTest(
+        await api.post<TestResult>("/api/settings/test-spotify", {
+          client_id: form.spotify_client_id || null,
+          client_secret: form.spotify_client_secret || null,
+        }),
+      );
+    } catch (e) {
+      setSpotifyTest({ ok: false, message: (e as Error).message });
     } finally {
       setTesting(null);
     }
@@ -178,6 +198,36 @@ export function SettingsPage() {
           >
             <input className={inputClass} value={form.plex_library_path} onChange={upd("plex_library_path")} />
           </Field>
+        </Section>
+
+        <Section
+          title="Spotify (optional)"
+          description={
+            <>
+              Lets you browse Spotify's catalog (search, artist pages, pasted links) and find releases on Soulseek. Only metadata is used; nothing
+              is downloaded from Spotify. Create a free app at{" "}
+              <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer" className="text-accent underline">
+                developer.spotify.com/dashboard
+              </a>{" "}
+              (any redirect URI, e.g. <code>http://127.0.0.1</code>, and tick <em>Web API</em>), then copy its Client ID and Client Secret here.
+            </>
+          }
+        >
+          <Field label="Client ID">
+            <input className={inputClass} value={form.spotify_client_id} onChange={upd("spotify_client_id")} autoComplete="off" />
+          </Field>
+          <Field label="Client Secret" hint={q.data?.spotify_client_secret_set ? "A secret is saved. Leave blank to keep it." : "Not set yet."}>
+            <input className={inputClass} type="password" value={form.spotify_client_secret} onChange={upd("spotify_client_secret")} autoComplete="off" />
+          </Field>
+          <Field label="Market" hint="Two-letter country code; hides releases not available in your region.">
+            <input className={inputClass} value={form.spotify_market} onChange={upd("spotify_market")} maxLength={2} autoCapitalize="characters" />
+          </Field>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" onClick={testSpotify} loading={testing === "spotify"}>
+              Test connection
+            </Button>
+            <Result r={spotifyTest} />
+          </div>
         </Section>
 
         <Section title="Trash">

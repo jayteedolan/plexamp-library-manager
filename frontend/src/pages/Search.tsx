@@ -5,25 +5,32 @@ import {
   ChevronUp,
   CircleCheck,
   CircleDot,
+  Disc3,
   Download,
   FolderSearch,
   Gauge,
-  Library as LibraryIcon,
+  ListChecks,
   ListMusic,
   Lock,
   Search as SearchIcon,
   Square,
   User,
+  X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, PageHeader, Spinner, cx, inputClass } from "../components/ui";
+import { CatalogResults } from "../components/catalog/CatalogResults";
+import { LibraryBadge } from "../components/catalog/common";
+import { Badge, Button, Card, EmptyState, IconButton, PageHeader, Spinner, cx, inputClass } from "../components/ui";
 import { api } from "../lib/api";
 import { bytes, duration, speed } from "../lib/format";
-import type { Job, ResultGroup, SearchResults, SearchSource } from "../lib/types";
+import { type GroupMatch, type MatchTarget, matchGroup, simplerQuery, sortByMatch } from "../lib/match";
+import type { CatalogSearchResults, CatalogStatus, Job, ResultGroup, SearchResults, SearchSource } from "../lib/types";
 import { confirm } from "../store/dialogs";
-import { DEFAULT_FILTERS, applyFilters, useSearchStore } from "../store/search";
+import { DEFAULT_FILTERS, applyFilters, startSoulseekSearch, useSearchStore } from "../store/search";
 import { toast } from "../store/toasts";
+
+const SPOTIFY_LINK = /spotify\.com\/|^spotify:|spotify\.link\//i;
 
 const TIER_TONE = { 1: "tier1", 2: "tier2", 3: "tier3", 4: "tier4" } as const;
 const MAX_SEARCH_MS = 45000;
@@ -40,10 +47,23 @@ export function QualityBadge({ tier, label }: { tier: number; label: string }) {
 
 export function SearchPage() {
   const s = useSearchStore();
-  const [text, setText] = useState(s.query);
+  const navigate = useNavigate();
+  const [text, setText] = useState(s.mode === "spotify" ? s.catalogQuery : s.query);
+  const [submitting, setSubmitting] = useState(false);
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => api.get<SearchSource[]>("/api/search/sources"), staleTime: 30000 });
+  const catalogStatus = useQuery({
+    queryKey: ["catalog-status"],
+    queryFn: () => api.get<CatalogStatus>("/api/catalog/status"),
+    staleTime: 60000,
+    retry: false,
+  });
   const current = sources.data?.find((x) => x.key === s.source);
   const pollRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // "Find on Soulseek" from a Spotify page fills in the query after this page has mounted.
+  useEffect(() => {
+    if (s.mode === "soulseek") setText(s.query);
+  }, [s.query, s.mode]);
 
   // Poll results while the search is running; results stream in as users respond.
   useEffect(() => {
@@ -53,9 +73,21 @@ export function SearchPage() {
       try {
         const r = await api.get<SearchResults>(`/api/search/${s.searchId}?source=${s.source}`);
         if (cancelled) return;
-        const timedOut = Date.now() - (useSearchStore.getState().startedAt ?? 0) > MAX_SEARCH_MS;
-        useSearchStore.getState().set({ results: r, running: !r.complete && !timedOut });
-        if (!r.complete && !timedOut) pollRef.current = setTimeout(tick, 1500);
+        const state = useSearchStore.getState();
+        const timedOut = Date.now() - (state.startedAt ?? 0) > MAX_SEARCH_MS;
+        const done = r.complete || timedOut;
+        state.set({ results: r, running: !done });
+        if (!done) {
+          pollRef.current = setTimeout(tick, 1500);
+          return;
+        }
+        // Nothing found for a Spotify release: try once more with a looser query.
+        const retry = state.target && !state.fallbackTried && r.groups.length === 0 ? simplerQuery(state.target) : null;
+        if (retry) {
+          state.set({ fallbackTried: true });
+          toast.info(`Nothing found — trying a broader search: "${retry}"`);
+          await startSoulseekSearch(retry);
+        }
       } catch (e) {
         if (cancelled) return;
         useSearchStore.getState().set({ running: false });
@@ -69,16 +101,39 @@ export function SearchPage() {
     };
   }, [s.searchId, s.running, s.source]);
 
+  const openLink = async (q: string) => {
+    const r = await api.get<CatalogSearchResults & { link?: { kind: string; id: string } }>(
+      `/api/catalog/search?q=${encodeURIComponent(q)}`,
+    );
+    if (r.link) navigate(`/search/spotify/${r.link.kind}/${r.link.id}`);
+  };
+
   const start = async (e: FormEvent) => {
     e.preventDefault();
     const q = text.trim();
     if (q.length < 2) return;
+    setSubmitting(true);
     try {
-      const r = await api.post<{ id: string }>("/api/search", { query: q, source: s.source });
-      s.reset(q, r.id);
+      if (SPOTIFY_LINK.test(q)) {
+        // A pasted Spotify link opens that item directly, from either tab.
+        s.set({ mode: "spotify" });
+        await openLink(q);
+      } else if (s.mode === "spotify") {
+        s.set({ catalogQuery: q });
+      } else {
+        await startSoulseekSearch(q);
+      }
     } catch (err) {
       toast.error(err);
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const switchMode = (mode: "soulseek" | "spotify") => {
+    if (mode === s.mode) return;
+    s.set({ mode });
+    setText(mode === "spotify" ? s.catalogQuery : s.query);
   };
 
   const stop = async () => {
@@ -86,51 +141,108 @@ export function SearchPage() {
     if (s.searchId) api.post(`/api/search/${s.searchId}/stop?source=${s.source}`).catch(() => {});
   };
 
-  const groups = useMemo(() => applyFilters(s.results?.groups ?? [], s.filters), [s.results, s.filters]);
+  const filtered = useMemo(() => applyFilters(s.results?.groups ?? [], s.filters), [s.results, s.filters]);
+  const matches = useMemo<Record<string, GroupMatch>>(
+    () => (s.target ? Object.fromEntries(filtered.map((g) => [g.id, matchGroup(g, s.target!)])) : {}),
+    [filtered, s.target],
+  );
+  const groups = useMemo(() => (s.target ? sortByMatch(filtered, matches) : filtered), [filtered, matches, s.target]);
   const hiddenCount = (s.results?.groups.length ?? 0) - groups.length;
+  const spotifyReady = catalogStatus.data?.configured;
 
   return (
     <div>
-      <PageHeader title="Search" subtitle="Find albums and tracks, ranked by quality first, then speed." />
+      <PageHeader
+        title="Search"
+        subtitle={s.mode === "spotify" ? "Browse Spotify's catalog, then find releases on Soulseek." : "Find albums and tracks, ranked by quality first, then speed."}
+      />
 
-      {sources.data && sources.data.length > 1 && (
-        <div className="mb-3 flex gap-1 rounded-xl bg-surface-2 p-1" role="tablist" aria-label="Search source">
-          {sources.data.map((src) => (
-            <button
-              key={src.key}
-              role="tab"
-              aria-selected={s.source === src.key}
-              onClick={() => s.set({ source: src.key, results: null, searchId: null, running: false })}
-              className={cx("flex-1 rounded-lg py-2 text-sm", s.source === src.key ? "bg-surface font-semibold shadow" : "text-muted")}
-            >
-              {src.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="mb-3 flex gap-1 rounded-xl bg-surface-2 p-1" role="tablist" aria-label="Search source">
+        {(
+          [
+            ["soulseek", "Soulseek", FolderSearch],
+            ["spotify", "Spotify", Disc3],
+          ] as const
+        ).map(([mode, label, Icon]) => (
+          <button
+            key={mode}
+            role="tab"
+            aria-selected={s.mode === mode}
+            onClick={() => switchMode(mode)}
+            className={cx(
+              "flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm",
+              s.mode === mode ? "bg-surface font-semibold shadow" : "text-muted",
+            )}
+          >
+            <Icon className="size-4" />
+            {label}
+          </button>
+        ))}
+      </div>
 
       <form onSubmit={start} className="mb-3 flex gap-2">
         <label className="relative flex-1">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
           <input
             className={cx(inputClass, "h-11 pl-9 text-base")}
-            placeholder="Artist, album or track"
+            placeholder={s.mode === "spotify" ? "Artist, album, song or Spotify link" : "Artist, album or track"}
             value={text}
             onChange={(e) => setText(e.target.value)}
             enterKeyHint="search"
             autoCapitalize="none"
           />
         </label>
-        {s.running ? (
+        {s.mode === "soulseek" && s.running ? (
           <Button type="button" className="h-11" onClick={stop} icon={<Square className="size-4" />}>
             Stop
           </Button>
         ) : (
-          <Button type="submit" variant="primary" className="h-11" disabled={text.trim().length < 2}>
+          <Button type="submit" variant="primary" className="h-11" loading={submitting} disabled={text.trim().length < 2}>
             Search
           </Button>
         )}
       </form>
+
+      {s.mode === "spotify" ? (
+        <>
+          {catalogStatus.data && !spotifyReady && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
+              <AlertTriangle className="size-4 shrink-0" />
+              <span className="flex-1">Spotify browsing needs your own (free) Spotify developer app.</span>
+              <Button size="sm" onClick={() => navigate("/settings")}>
+                Set up
+              </Button>
+            </div>
+          )}
+          <CatalogResults query={s.catalogQuery} />
+        </>
+      ) : (
+        <SoulseekPane
+          current={current}
+          groups={groups}
+          matches={matches}
+          hiddenCount={hiddenCount}
+        />
+      )}
+    </div>
+  );
+}
+
+function SoulseekPane({
+  current,
+  groups,
+  matches,
+  hiddenCount,
+}: {
+  current: SearchSource | undefined;
+  groups: ResultGroup[];
+  matches: Record<string, GroupMatch>;
+  hiddenCount: number;
+}) {
+  const s = useSearchStore();
+  return (
+    <>
+      {s.target && <TargetBanner target={s.target} onClear={() => s.set({ target: null })} />}
 
       {current && !current.ok && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
@@ -164,11 +276,36 @@ export function SearchPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {groups.map((g) => (
-            <ResultCard key={g.id} group={g} />
+            <ResultCard key={g.id} group={g} match={matches[g.id]} target={s.target} />
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+function TargetBanner({ target, onClear }: { target: MatchTarget; onClear: () => void }) {
+  const what = target.kind === "album" ? `${target.album} (${target.tracks.length} track${target.tracks.length === 1 ? "" : "s"})` : target.tracks[0];
+  return (
+    <div className="mb-3 flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-sm">
+      <ListChecks className="size-4 shrink-0 text-accent" />
+      <span className="min-w-0 flex-1 truncate">
+        Matching: <span className="font-medium">{target.artists.join(", ")}</span> — {what}
+      </span>
+      <IconButton label="Stop matching" className="size-8" onClick={onClear}>
+        <X className="size-4" />
+      </IconButton>
     </div>
+  );
+}
+
+function MatchBadge({ match }: { match: GroupMatch }) {
+  const tone = match.level === "full" ? "ok" : match.level === "partial" ? "warn" : "neutral";
+  const label = match.total === 1 ? (match.matched ? "Has this song" : "Song not found") : `${match.matched}/${match.total} tracks match`;
+  return (
+    <Badge tone={tone}>
+      <ListChecks className="size-3" /> {label}
+    </Badge>
   );
 }
 
@@ -210,12 +347,15 @@ function FiltersBar() {
   );
 }
 
-function ResultCard({ group: base }: { group: ResultGroup }) {
+function ResultCard({ group: base, match, target }: { group: ResultGroup; match?: GroupMatch; target: MatchTarget | null }) {
   const { expanded, selection, browsed, set, source } = useSearchStore();
   const group = browsed[base.id] ? { ...base, files: browsed[base.id].files } : base;
   const open = !!expanded[base.id];
   const downloadable = group.files.filter((f) => !f.locked);
-  const selected = new Set(selection[base.id] ?? downloadable.filter((f) => f.is_audio).map((f) => f.filename));
+  // For a single-song search, pre-select just the matching file.
+  const defaultSelection =
+    target?.kind === "track" && match?.files.length ? match.files : downloadable.filter((f) => f.is_audio).map((f) => f.filename);
+  const selected = new Set(selection[base.id] ?? defaultSelection);
   const selectedFiles = downloadable.filter((f) => selected.has(f.filename));
   const selectedSize = selectedFiles.reduce((a, f) => a + f.size, 0);
   const [browsing, setBrowsing] = useState(false);
@@ -252,7 +392,13 @@ function ResultCard({ group: base }: { group: ResultGroup }) {
     if (!files.length) return;
     setQueuing(true);
     try {
-      const body = { username: group.username, directory: group.directory, files: files.map((f) => ({ filename: f.filename, size: f.size })), title: group.folder_name };
+      const body = {
+        username: group.username,
+        directory: group.directory,
+        files: files.map((f) => ({ filename: f.filename, size: f.size })),
+        title: group.folder_name,
+        catalog: target ? { artist: target.artists[0] ?? null, album: target.album || null } : null,
+      };
       const space = await api.post<{ ok: boolean; message: string | null }>("/api/downloads/space-check", body);
       if (!space.ok && !(await confirm("Low disk space", space.message ?? "The drive is nearly full.", "Download anyway"))) return;
       const job = await api.post<Job>("/api/downloads", body);
@@ -278,16 +424,8 @@ function ResultCard({ group: base }: { group: ResultGroup }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium break-all">{group.folder_name}</span>
-            {group.in_library === "full" && (
-              <Badge tone="ok">
-                <LibraryIcon className="size-3" /> In library
-              </Badge>
-            )}
-            {group.in_library === "partial" && (
-              <Badge tone="warn">
-                <LibraryIcon className="size-3" /> Partly in library
-              </Badge>
-            )}
+            <LibraryBadge hint={group.in_library} />
+            {match && <MatchBadge match={match} />}
           </div>
           {group.parent_name && <div className="truncate text-xs text-muted">in {group.parent_name}</div>}
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
@@ -325,9 +463,15 @@ function ResultCard({ group: base }: { group: ResultGroup }) {
           <Button size="sm" onClick={() => set({ expanded: { ...expanded, [base.id]: true } })}>
             Pick tracks
           </Button>
-          <Button size="sm" variant="primary" loading={queuing} disabled={group.locked} icon={<Download className="size-4" />} onClick={() => download(downloadable.filter((f) => f.is_audio))}>
-            Download all
-          </Button>
+          {target?.kind === "track" && match?.files.length ? (
+            <Button size="sm" variant="primary" loading={queuing} icon={<Download className="size-4" />} onClick={() => download(downloadable.filter((f) => match.files.includes(f.filename)))}>
+              Download song
+            </Button>
+          ) : (
+            <Button size="sm" variant="primary" loading={queuing} disabled={group.locked} icon={<Download className="size-4" />} onClick={() => download(downloadable.filter((f) => f.is_audio))}>
+              Download all
+            </Button>
+          )}
         </div>
       )}
 

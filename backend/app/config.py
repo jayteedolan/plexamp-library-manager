@@ -34,10 +34,18 @@ class Settings(BaseSettings):
     # The library root as Plex sees it (for targeted scans). Defaults to library_root.
     plex_library_path: str = ""
 
+    # Spotify catalog browsing (search, artist pages, pasted links). Uses the user's own developer app
+    # via the client-credentials flow; downloads still come from Soulseek.
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
+    spotify_market: str = "US"
+    spotify_api_url: str = "https://api.spotify.com/v1"
+    spotify_accounts_url: str = "https://accounts.spotify.com"
+
     trash_retention_days: int = 30
     session_days: int = 30
     cookie_secure: bool = True
-    # Off by default: a login page and single admin account. Some self-hosters run this behind
+    # On by default: a login page and single admin account. Some self-hosters run this behind
     # their own access control (e.g. Tailscale-only, already trusted) and don't want a second
     # login layer. Setting this false removes both -- every route in the app becomes reachable to
     # anything that can reach the container, so only do this on a network you already trust.

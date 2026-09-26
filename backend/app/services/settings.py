@@ -15,8 +15,11 @@ EDITABLE_KEYS = {
     "plex_section_id",
     "plex_library_path",
     "trash_retention_days",
+    "spotify_client_id",
+    "spotify_client_secret",
+    "spotify_market",
 }
-SECRET_KEYS = {"slskd_api_key", "plex_token"}
+SECRET_KEYS = {"slskd_api_key", "plex_token", "spotify_client_secret"}
 
 
 @dataclass
@@ -28,6 +31,9 @@ class RuntimeSettings:
     plex_section_id: str
     plex_library_path: str
     trash_retention_days: int
+    spotify_client_id: str
+    spotify_client_secret: str
+    spotify_market: str
 
 
 def load(db: Session) -> RuntimeSettings:
@@ -51,6 +57,9 @@ def load(db: Session) -> RuntimeSettings:
         plex_section_id=get("plex_section_id"),
         plex_library_path=get("plex_library_path") or str(env.library_root),
         trash_retention_days=max(1, retention),
+        spotify_client_id=get("spotify_client_id").strip(),
+        spotify_client_secret=get("spotify_client_secret").strip(),
+        spotify_market=(get("spotify_market").strip().upper() or "US")[:2],
     )
 
 
@@ -78,4 +87,7 @@ def public_view(rs: RuntimeSettings) -> dict:
         "plex_section_id": rs.plex_section_id,
         "plex_library_path": rs.plex_library_path,
         "trash_retention_days": rs.trash_retention_days,
+        "spotify_client_id": rs.spotify_client_id,
+        "spotify_client_secret_set": bool(rs.spotify_client_secret),
+        "spotify_market": rs.spotify_market,
     }

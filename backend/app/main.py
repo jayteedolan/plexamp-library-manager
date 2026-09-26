@@ -13,13 +13,16 @@ from app import events
 from app.config import get_settings
 from app.db import init_engine, session_scope
 from app.providers.soulseek import client_for
-from app.routers import auth, downloads, files, plex, search, system, trash
+from app.routers import auth, catalog, downloads, files, plex, search, system, trash
+from app.services import cache as cache_service
 from app.services import downloads as downloads_service
 from app.services import fs, plex_ops
 from app.services import settings as settings_service
 from app.services import trash as trash_service
 from app.services.plex import PlexError
+from app.services.ratelimit import RateLimited
 from app.services.slskd import SlskdError
+from app.services.spotify import SpotifyError
 
 log = logging.getLogger("library-manager")
 
@@ -47,6 +50,13 @@ async def _purge_trash() -> None:
         events.publish("trash", {})
 
 
+async def _purge_cache() -> None:
+    with session_scope() as db:
+        count = cache_service.purge_expired(db)
+    if count:
+        log.info("purged %d expired cache entries", count)
+
+
 async def _rebuild_index() -> None:
     await plex_ops.rebuild_index_detached()
 
@@ -68,6 +78,7 @@ def create_app(start_background: bool = True) -> FastAPI:
             tasks = [
                 asyncio.create_task(downloads_service.poller(session_scope, client_for, stop)),
                 asyncio.create_task(_periodic("trash purge", 6 * 3600, _purge_trash, stop, 30)),
+                asyncio.create_task(_periodic("cache purge", 24 * 3600, _purge_cache, stop, 60)),
                 asyncio.create_task(_periodic("library index", 6 * 3600, _rebuild_index, stop, 3)),
             ]
         yield
@@ -86,6 +97,16 @@ def create_app(start_background: bool = True) -> FastAPI:
     async def slskd_error(_request: Request, exc: SlskdError):
         return JSONResponse({"detail": str(exc)}, status_code=502)
 
+    @app.exception_handler(SpotifyError)
+    async def spotify_error(_request: Request, exc: SpotifyError):
+        return JSONResponse({"detail": str(exc)}, status_code=502)
+
+    @app.exception_handler(RateLimited)
+    async def rate_limited(_request: Request, exc: RateLimited):
+        wait = int(exc.retry_after) + 1
+        return JSONResponse({"detail": str(exc), "extra": {"retry_after": wait}}, status_code=429,
+                            headers={"Retry-After": str(wait)})
+
     @app.exception_handler(PlexError)
     async def plex_error(_request: Request, exc: PlexError):
         return JSONResponse({"detail": str(exc)}, status_code=502)
@@ -99,7 +120,7 @@ def create_app(start_background: bool = True) -> FastAPI:
     async def os_error(_request: Request, exc: OSError):
         return JSONResponse({"detail": f"Filesystem error: {exc.strerror or exc}"}, status_code=500)
 
-    for r in (auth, files, trash, plex, search, downloads, system):
+    for r in (auth, files, trash, plex, search, catalog, downloads, system):
         app.include_router(r.router)
 
     static_dir = settings.static_dir or Path(__file__).resolve().parent.parent / "static"

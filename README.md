@@ -3,6 +3,7 @@
 A self-hosted dashboard for the Plex music library on a Raspberry Pi. It works on both desktop and phone. With it you can:
 
 - **Search Soulseek.** Results are ranked by **quality first** (FLAC, then MP3 320/V0, then lower bitrates), then by speed (free slot, upload speed, queue). They are grouped into album cards by user and folder, and each card is flagged if you **already have that album**. You can download a whole folder or pick individual tracks.
+- **Browse Spotify's catalog (optional).** Search artists, albums and songs, open an artist's albums, singles and compilations, or paste a Spotify link. **Find on Soulseek** searches for that exact release and shows how many of its tracks each result folder has, e.g. "12/13 tracks match". It uses your own Spotify developer app for metadata only, with cached and paced requests.
 - **Download.** Progress is live and per file. When you **cancel**, you choose to *keep the finished files* or *delete them*. Failed files can be retried. Downloads keep running on the Pi after you close the browser.
 - **File downloads into the library.** A built-in **file explorer** opens at a suggested `Artist/Album` folder, based on the files' tags. You can tidy that folder first (for example, delete the old tracks from a half-downloaded album), then press **File here**. Nothing gets overwritten: a file with the same name is saved as `name (2)`.
 - **Trigger Plex scans.** Use the **Scan library** button, or let the app run a scan of just that album folder automatically after filing.
@@ -25,7 +26,7 @@ Phone / laptop ──Tailscale HTTPS──▶ Library Manager (Docker, :8080 on 
 
 - **Backend:** Python / FastAPI + SQLite (`backend/`). It includes a path-jailed file service, the trash, the slskd and Plex clients, a download poller, and Server-Sent Events for live updates.
 - **Frontend:** React + TypeScript + Tailwind (`frontend/`). It can be installed as a home-screen app, and it follows the system light/dark theme.
-- **Search sources are pluggable** (`backend/app/providers/`). Soulseek is the only source in v1. A second source (for example, a lossless streaming-service downloader) can be added behind the same source toggle and reuse the Downloads and filing flow.
+- **Search sources are pluggable** (`backend/app/providers/`). Soulseek is the only download source. The Spotify tab (`backend/app/services/spotify.py`, `catalog.py`) is a metadata catalog that feeds Soulseek searches. All third-party calls go through `services/ratelimit.py`: paced, concurrency-capped, and backing off on `Retry-After`.
 
 ### Safety features
 
@@ -60,5 +61,4 @@ node e2e/smoke.mjs
 ## Roadmap
 
 - Push notifications (ntfy / Web Push) when downloads finish or fail
-- A second search source toggle (lossless streaming-service downloader)
 - Upload from / download to the device, in-browser audio preview

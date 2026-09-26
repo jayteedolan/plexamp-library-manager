@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth import current_user
 from app.config import get_settings
 from app.db import get_db
-from app.models import DownloadFile, DownloadJob
+from app.models import DownloadFile, DownloadJob, DownloadJobHint
 from app.providers.soulseek import client_for
 from app.services import downloads, library_index, plex_ops
 from app.services.plex import PlexError
@@ -25,11 +25,17 @@ class RemoteFile(BaseModel):
     size: int
 
 
+class CatalogHint(BaseModel):
+    artist: str | None = None
+    album: str | None = None
+
+
 class CreateBody(BaseModel):
     username: str
     directory: str
     files: list[RemoteFile]
     title: str | None = None
+    catalog: CatalogHint | None = None  # the Spotify release this download was started from
 
 
 class FileIdsBody(BaseModel):
@@ -77,6 +83,9 @@ async def create(body: CreateBody, db: Session = Depends(get_db)):
     async with client_for(db) as client:
         job = await downloads.create_job(db, client, body.username, body.directory,
                                          [f.model_dump() for f in body.files], body.title)
+    if body.catalog and (body.catalog.artist or body.catalog.album):
+        db.add(DownloadJobHint(job_id=job.id, artist=body.catalog.artist, album=body.catalog.album))
+        db.commit()
     return downloads.job_view(job)
 
 
@@ -132,7 +141,9 @@ async def suggest(job_id: int, db: Session = Depends(get_db)):
     job = _job(db, job_id)
     paths = [Path(f.local_path) for f in job.files
              if f.state == "completed" and not f.filed and f.local_path]
-    return await asyncio.to_thread(suggest_destination, paths, job.remote_folder, library_index.current())
+    row = db.get(DownloadJobHint, job.id)
+    hint = {"artist": row.artist, "album": row.album} if row else None
+    return await asyncio.to_thread(suggest_destination, paths, job.remote_folder, library_index.current(), hint)
 
 
 @router.post("/{job_id}/file")
