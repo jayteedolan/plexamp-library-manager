@@ -69,8 +69,9 @@ export function Layout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile header */}
-        <header className="pt-safe flex items-center justify-between border-b border-border bg-surface px-4 py-2 md:hidden">
+        {/* Mobile header. Sticky so iOS home-screen apps see a pinned top bar and extend its color into
+            the top edge instead of blurring it; the padding keeps content clear of that edge either way. */}
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-surface px-4 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:hidden">
           <div className="flex items-center gap-2 font-semibold">
             <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-contrast">
               <Music2 className="size-4" />

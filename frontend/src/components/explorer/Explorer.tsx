@@ -567,7 +567,7 @@ export function Explorer({ path, onNavigate, pick, onScan, scanning }: Props) {
       )}
 
       {pick && (
-        <div className="pb-safe flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3 py-3">
           {pick.extra}
           <div className="ml-auto flex gap-2">
             <Button onClick={pick.onCancel}>Cancel</Button>

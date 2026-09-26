@@ -6,7 +6,11 @@
     <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default", not "black-translucent": translucent lets the home-screen app draw under the
+         status bar, where iOS blurs the header, and triggers an iOS bug that sizes the page short by
+         the status bar's height (a blank strip under the tab bar). "default" starts the page below
+         the status bar and paints the bar with theme-color above. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
