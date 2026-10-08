@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 import shutil
 import time
 from datetime import timedelta
@@ -107,11 +108,12 @@ def _locate_local(job: DownloadJob, f: DownloadFile) -> Path | None:
         return candidate
     # slskd may have appended a suffix (e.g. "_638...") when a same-named file existed; look nearby.
     staging = get_settings().staging_root
-    stem = os.path.splitext(name)[0]
+    stem, ext = os.path.splitext(name)
+    suffixed = re.compile(rf"^{re.escape(stem)}_\d+{re.escape(ext)}$")
     for dirpath, dirnames, files in os.walk(staging):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for fn in files:
-            if fn == name or (fn.startswith(stem) and fn.endswith(os.path.splitext(name)[1])):
+            if fn == name or suffixed.match(fn):
                 p = Path(dirpath) / fn
                 with contextlib.suppress(OSError):
                     if p.stat().st_size == f.size:
@@ -305,12 +307,20 @@ def file_job(db: Session, job: DownloadJob, dest_vpath: str, file_ids: list[int]
     with fs.locks.hold([dest]):
         for f in selected:
             if not f.local_path or not Path(f.local_path).exists():
+                # The file may not have been in place when slskd reported it complete; look again.
+                found = _locate_local(job, f)
+                f.local_path = str(found) if found else None
+            if not f.local_path:
                 results.append({"id": f.id, "status": "missing"})
                 continue
             src = Path(f.local_path)
             name = fs.unique_name(dest, src.name)
             target = dest / name
-            shutil.move(str(src), str(target))
+            try:
+                shutil.move(str(src), str(target))
+            except OSError as e:
+                results.append({"id": f.id, "status": "error", "error": str(e)})
+                continue
             f.filed = True
             f.local_path = str(target)
             results.append({"id": f.id, "status": "filed", "name": name, "renamed": name != src.name})

@@ -140,6 +140,34 @@ def test_download_cancel_keep_and_file_flow(authed, roots):
 
 
 @respx.mock
+def test_file_recovers_file_with_unknown_local_path(authed, roots):
+    c = authed
+    respx.post(f"{SLSKD}/transfers/downloads/bob").mock(return_value=httpx.Response(201))
+    names = ["1.mp3", "2.mp3"]
+    job = c.post("/api/downloads", json={
+        "username": "bob", "directory": "x\\Alb",
+        "files": [{"filename": f"x\\Alb\\{n}", "size": 3} for n in names]}).json()
+    (roots["staging"] / "Alb").mkdir()
+    (roots["staging"] / "Alb" / "1.mp3").write_bytes(b"abc")
+    with session_scope() as db:
+        from app.models import DownloadFile
+
+        downloads.apply_transfers(db, [
+            {"id": f"t{i}", "username": "bob", "filename": f"x\\Alb\\{n}", "state": "Completed, Succeeded",
+             "bytesTransferred": 3} for i, n in enumerate(names)])
+        # Track 2 completed before it appeared on disk, so no path was recorded.
+        assert db.query(DownloadFile).filter(DownloadFile.remote_filename.like("%2.mp3")).one().local_path is None
+    (roots["staging"] / "Alb" / "2.mp3").write_bytes(b"abc")
+    respx.get("http://plex.test/library/sections").mock(return_value=httpx.Response(200, json={
+        "MediaContainer": {"Directory": []}}))
+    r = c.post(f"/api/downloads/{job['id']}/file", json={"destination": "library/Bob/Alb"})
+    assert r.status_code == 200, r.text
+    assert [x["status"] for x in r.json()["results"]] == ["filed", "filed"]
+    assert r.json()["job"]["status"] == "filed"
+    assert not (roots["staging"] / "Alb").exists()
+
+
+@respx.mock
 def test_cancel_then_discard(authed, roots):
     c = authed
     respx.post(f"{SLSKD}/transfers/downloads/bob").mock(return_value=httpx.Response(201))

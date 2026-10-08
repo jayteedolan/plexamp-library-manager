@@ -12,7 +12,7 @@ import { toast } from "../store/toasts";
 
 interface FileResult {
   destination: string;
-  results: { id: number; status: string; name?: string; renamed?: boolean }[];
+  results: { id: number; status: string; name?: string; renamed?: boolean; error?: string }[];
   scan: { started: boolean; message: string } | null;
 }
 
@@ -77,7 +77,13 @@ export function FileDownload() {
       let msg = `Filed ${filed.length} file${filed.length === 1 ? "" : "s"} into ${displayPath(r.destination)}.`;
       if (renamed.length) msg += ` ${renamed.length} renamed to avoid replacing existing files (${renamed.map((x) => x.name).join(", ")}).`;
       if (r.scan) msg += r.scan.started ? " Plex scan started." : ` Plex: ${r.scan.message}`;
-      toast.ok(msg);
+      const failed = r.results.filter((x) => x.status === "missing" || x.status === "error");
+      if (failed.length) {
+        const why = failed.map((x) => x.error).filter(Boolean)[0];
+        msg += ` ${failed.length} file${failed.length === 1 ? "" : "s"} could not be moved and ${failed.length === 1 ? "was" : "were"} left in staging${why ? ` (${why})` : ""}.`;
+      }
+      if (failed.length) toast.error(msg);
+      else toast.ok(msg);
       qc.invalidateQueries({ queryKey: ["downloads"] });
       qc.invalidateQueries({ queryKey: ["status"] });
       qc.invalidateQueries({ queryKey: ["plex"] });
